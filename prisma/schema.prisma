@@ -1,0 +1,448 @@
+// NorthLend Financial Investor Portal - Prisma Schema
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─── Auth & Users ────────────────────────────────────────────────────────────
+
+enum Role {
+  SUPER_ADMIN
+  ADMIN
+  UNDERWRITER
+  INVESTOR
+}
+
+enum OnboardingStatus {
+  PENDING
+  KYC_REQUIRED
+  ACCREDITATION_PENDING
+  NDA_REQUIRED
+  APPROVED
+  REJECTED
+}
+
+model User {
+  id              String   @id @default(cuid())
+  email           String   @unique
+  passwordHash    String
+  name            String
+  role            Role     @default(INVESTOR)
+  avatar          String?
+  phone           String?
+  twoFactorSecret String?
+  twoFactorEnabled Boolean @default(false)
+  emailVerified   DateTime?
+  isActive        Boolean  @default(true)
+  lastLoginAt     DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  investorProfile  InvestorProfile?
+  investments      Investment[]
+  notifications    Notification[]
+  auditLogs        AuditLog[]
+  documents        Document[]
+  ndaSignatures    NDASignature[]
+  chatRoomUsers    ChatRoomUser[]
+  chatMessages     ChatMessage[]
+  sessions         Session[]
+  accounts         Account[]
+
+  @@map("users")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+// ─── Investor Profile ────────────────────────────────────────────────────────
+
+model InvestorProfile {
+  id                  String           @id @default(cuid())
+  userId              String           @unique
+  onboardingStatus    OnboardingStatus @default(PENDING)
+  accreditationStatus String?
+  accreditationDoc    String?
+  kycVerified         Boolean          @default(false)
+  kycVerifiedAt       DateTime?
+  taxId               String?
+  entityName          String?
+  entityType          String?
+  address             String?
+  city                String?
+  province            String?
+  postalCode          String?
+  country             String?          @default("CA")
+  totalInvested       Float            @default(0)
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("investor_profiles")
+}
+
+// ─── Deals & Mortgages ───────────────────────────────────────────────────────
+
+enum DealStatus {
+  DRAFT
+  PENDING_REVIEW
+  UNDERWRITING
+  APPROVED
+  FUNDING
+  FUNDED
+  ACTIVE
+  MATURED
+  DEFAULT
+  CLOSED
+}
+
+enum PropertyType {
+  RESIDENTIAL
+  COMMERCIAL
+  INDUSTRIAL
+  MIXED_USE
+  LAND
+}
+
+model Deal {
+  id                    String       @id @default(cuid())
+  externalId            String?      @unique // Mortgage Automator deal ID
+  title                 String
+  propertyAddress       String
+  propertyCity          String
+  propertyProvince      String
+  propertyPostalCode    String
+  propertyType          PropertyType @default(RESIDENTIAL)
+  propertyValue         Float
+  loanAmount            Float
+  ltv                   Float        // Loan-to-value ratio
+  interestRate          Float
+  term                  Int          // Term in months
+  amortization          Int?         // Amortization in months
+  status                DealStatus   @default(DRAFT)
+  borrowerName          String?
+  borrowerCreditScore   Int?
+  borrowerIncomeVerified Boolean     @default(false)
+  borrowerDebtServiceRatio Float?
+  borrowerEmploymentType  String?
+  description           String?
+  riskRating            String?
+  maturityDate          DateTime?
+  fundedDate            DateTime?
+  closedDate            DateTime?
+  totalFunded           Float        @default(0)
+  targetAmount          Float?
+  minimumInvestment     Float?       @default(25000)
+  lastSyncedAt          DateTime?
+  createdAt             DateTime     @default(now())
+  updatedAt             DateTime     @updatedAt
+
+  investments Investment[]
+  payments    Payment[]
+  documents   Document[]
+
+  @@map("deals")
+}
+
+// ─── Investments ─────────────────────────────────────────────────────────────
+
+enum InvestmentStatus {
+  PENDING
+  COMMITTED
+  FUNDED
+  ACTIVE
+  MATURED
+  WITHDRAWN
+}
+
+model Investment {
+  id           String           @id @default(cuid())
+  userId       String
+  dealId       String
+  amount       Float
+  sharePercent Float            // Percentage of deal owned
+  status       InvestmentStatus @default(PENDING)
+  investedAt   DateTime?
+  maturedAt    DateTime?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  user         User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deal         Deal             @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  transactions Transaction[]
+
+  @@map("investments")
+}
+
+// ─── Payments ────────────────────────────────────────────────────────────────
+
+enum PaymentStatus {
+  SCHEDULED
+  PENDING
+  RECEIVED
+  LATE
+  MISSED
+  PARTIAL
+}
+
+model Payment {
+  id            String        @id @default(cuid())
+  externalId    String?       @unique // Mortgage Automator payment ID
+  dealId        String
+  amount        Float
+  principal     Float
+  interest      Float
+  dueDate       DateTime
+  paidDate      DateTime?
+  status        PaymentStatus @default(SCHEDULED)
+  lastSyncedAt  DateTime?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  deal Deal @relation(fields: [dealId], references: [id], onDelete: Cascade)
+
+  @@map("payments")
+}
+
+// ─── Transactions ────────────────────────────────────────────────────────────
+
+enum TransactionType {
+  INVESTMENT
+  DISTRIBUTION
+  RETURN_OF_CAPITAL
+  FEE
+  ADJUSTMENT
+}
+
+model Transaction {
+  id           String          @id @default(cuid())
+  externalId   String?         @unique
+  investmentId String
+  type         TransactionType
+  amount       Float
+  description  String?
+  date         DateTime
+  createdAt    DateTime        @default(now())
+
+  investment Investment @relation(fields: [investmentId], references: [id], onDelete: Cascade)
+
+  @@map("transactions")
+}
+
+// ─── Documents ───────────────────────────────────────────────────────────────
+
+enum DocumentType {
+  NDA
+  SUBSCRIPTION_AGREEMENT
+  TAX_FORM
+  KYC_DOCUMENT
+  DEAL_SUMMARY
+  APPRAISAL
+  LEGAL_OPINION
+  FINANCIAL_STATEMENT
+  MORTGAGE_DOCUMENT
+  REPORT
+  OTHER
+}
+
+model Document {
+  id           String       @id @default(cuid())
+  externalId   String?      @unique
+  dealId       String?
+  userId       String?
+  type         DocumentType @default(OTHER)
+  name         String
+  s3Key        String
+  s3Bucket     String?
+  contentType  String?
+  fileSize     Int?
+  uploadedAt   DateTime     @default(now())
+  lastSyncedAt DateTime?
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  deal Deal? @relation(fields: [dealId], references: [id], onDelete: SetNull)
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@map("documents")
+}
+
+// ─── NDA ─────────────────────────────────────────────────────────────────────
+
+model NDASignature {
+  id        String   @id @default(cuid())
+  userId    String
+  version   String   @default("1.0")
+  ipAddress String?
+  signedAt  DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, version])
+  @@map("nda_signatures")
+}
+
+// ─── Notifications ───────────────────────────────────────────────────────────
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  title     String
+  message   String
+  type      String   @default("info") // info, success, warning, error
+  link      String?
+  read      Boolean  @default(false)
+  readAt    DateTime?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notifications")
+}
+
+// ─── Audit Log ───────────────────────────────────────────────────────────────
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  action    String
+  entity    String
+  entityId  String?
+  metadata  Json?
+  ipAddress String?
+  createdAt DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@map("audit_logs")
+}
+
+// ─── Reports ─────────────────────────────────────────────────────────────────
+
+enum ReportType {
+  MONTHLY_STATEMENT
+  QUARTERLY_REPORT
+  ANNUAL_REPORT
+  TAX_SUMMARY
+  PORTFOLIO_SUMMARY
+}
+
+enum ReportStatus {
+  GENERATING
+  READY
+  FAILED
+}
+
+model Report {
+  id        String       @id @default(cuid())
+  type      ReportType
+  title     String
+  s3Key     String?
+  status    ReportStatus @default(GENERATING)
+  metadata  Json?
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  @@map("reports")
+}
+
+// ─── Chat ────────────────────────────────────────────────────────────────────
+
+model ChatRoom {
+  id        String         @id @default(cuid())
+  name      String?
+  type      String         @default("support") // support, deal, general
+  dealId    String?
+  isActive  Boolean        @default(true)
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+
+  users    ChatRoomUser[]
+  messages ChatMessage[]
+
+  @@map("chat_rooms")
+}
+
+model ChatRoomUser {
+  id         String   @id @default(cuid())
+  chatRoomId String
+  userId     String
+  joinedAt   DateTime @default(now())
+
+  chatRoom ChatRoom @relation(fields: [chatRoomId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([chatRoomId, userId])
+  @@map("chat_room_users")
+}
+
+model ChatMessage {
+  id         String   @id @default(cuid())
+  chatRoomId String
+  userId     String
+  content    String
+  createdAt  DateTime @default(now())
+
+  chatRoom ChatRoom @relation(fields: [chatRoomId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("chat_messages")
+}
+
+// ─── Sync Tracking ───────────────────────────────────────────────────────────
+
+model SyncLog {
+  id          String   @id @default(cuid())
+  type        String   // deals, payments, documents, full
+  status      String   // running, completed, failed
+  itemsSynced Int      @default(0)
+  errors      Json?
+  startedAt   DateTime @default(now())
+  completedAt DateTime?
+  triggeredBy String?  // userId or "system"
+
+  @@map("sync_logs")
+}
