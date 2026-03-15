@@ -1,43 +1,15 @@
-import NextAuth, { type NextAuthConfig } from "next-auth";
+import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import { prisma } from "@/lib/prisma";
 import { verifyPassword } from "@/lib/password";
+import { authConfig } from "./auth.config";
 
-type Role = "SUPER_ADMIN" | "ADMIN" | "UNDERWRITER" | "INVESTOR";
-
-declare module "next-auth" {
-  interface Session {
-    user: {
-      id: string;
-      email: string;
-      name: string;
-      role: Role;
-      image?: string | null;
-    };
-  }
-
-  interface User {
-    role: Role;
-  }
-}
-
-declare module "next-auth" {
-  interface JWT {
-    id: string;
-    role: Role;
-  }
-}
-
-const config: NextAuthConfig = {
-  trustHost: true,
-  session: {
-    strategy: "jwt",
-    maxAge: 900, // 15 minutes
-  },
-  pages: {
-    signIn: "/login",
-    error: "/login",
-  },
+/**
+ * Full NextAuth config — extends the edge-safe authConfig with Credentials provider.
+ * This file is only imported by API routes (not middleware/edge).
+ */
+const config = {
+  ...authConfig,
   providers: [
     Credentials({
       name: "credentials",
@@ -100,43 +72,6 @@ const config: NextAuthConfig = {
       },
     }),
   ],
-  callbacks: {
-    async jwt({ token, user }) {
-      if (user) {
-        token.id = user.id as string;
-        token.role = user.role;
-      }
-      return token;
-    },
-    async session({ session, token }) {
-      if (token) {
-        session.user.id = token.id as string;
-        session.user.role = token.role as Role;
-      }
-      return session;
-    },
-    async authorized({ auth, request: { nextUrl } }) {
-      const isLoggedIn = !!auth?.user;
-      const isOnDashboard = nextUrl.pathname.startsWith("/dashboard");
-      const isOnAdmin = nextUrl.pathname.startsWith("/admin");
-
-      if (isOnAdmin) {
-        if (!isLoggedIn) return false;
-        const role = auth?.user?.role;
-        if (role !== "ADMIN" && role !== "SUPER_ADMIN") {
-          return Response.redirect(new URL("/dashboard", nextUrl));
-        }
-        return true;
-      }
-
-      if (isOnDashboard) {
-        if (!isLoggedIn) return false;
-        return true;
-      }
-
-      return true;
-    },
-  },
 };
 
 export const { handlers, auth, signIn, signOut } = NextAuth(config);
