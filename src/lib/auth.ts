@@ -46,42 +46,57 @@ const config: NextAuthConfig = {
         password: { label: "Password", type: "password" },
       },
       async authorize(credentials) {
-        if (!credentials?.email || !credentials?.password) {
+        try {
+          if (!credentials?.email || !credentials?.password) {
+            console.log("[Auth] Missing email or password");
+            return null;
+          }
+
+          const email = credentials.email as string;
+          const password = credentials.password as string;
+          console.log("[Auth] Attempting login for:", email.toLowerCase());
+
+          const user = await prisma.user.findUnique({
+            where: { email: email.toLowerCase() },
+          });
+
+          if (!user) {
+            console.log("[Auth] User not found:", email.toLowerCase());
+            return null;
+          }
+
+          if (!user.isActive) {
+            console.log("[Auth] User is inactive:", email.toLowerCase());
+            return null;
+          }
+
+          const isValidPassword = await verifyPassword(
+            password,
+            user.passwordHash
+          );
+
+          if (!isValidPassword) {
+            console.log("[Auth] Invalid password for:", email.toLowerCase());
+            return null;
+          }
+
+          // Update last login
+          await prisma.user.update({
+            where: { id: user.id },
+            data: { lastLoginAt: new Date() },
+          });
+
+          console.log("[Auth] Login successful for:", user.email, "role:", user.role);
+          return {
+            id: user.id,
+            email: user.email,
+            name: user.name,
+            role: user.role,
+          };
+        } catch (error) {
+          console.error("[Auth] Authorize error:", error);
           return null;
         }
-
-        const email = credentials.email as string;
-        const password = credentials.password as string;
-
-        const user = await prisma.user.findUnique({
-          where: { email: email.toLowerCase() },
-        });
-
-        if (!user || !user.isActive) {
-          return null;
-        }
-
-        const isValidPassword = await verifyPassword(
-          password,
-          user.passwordHash
-        );
-
-        if (!isValidPassword) {
-          return null;
-        }
-
-        // Update last login
-        await prisma.user.update({
-          where: { id: user.id },
-          data: { lastLoginAt: new Date() },
-        });
-
-        return {
-          id: user.id,
-          email: user.email,
-          name: user.name,
-          role: user.role,
-        };
       },
     }),
   ],

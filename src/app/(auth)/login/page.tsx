@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useState, useTransition } from "react";
+import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { signIn } from "next-auth/react";
@@ -17,39 +17,48 @@ function LoginForm() {
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
   const [error, setError] = useState(errorParam || "");
-  const [isPending, startTransition] = useTransition();
+  const [isLoading, setIsLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+    setIsLoading(true);
 
-    startTransition(async () => {
-      try {
-        const result = await signIn("credentials", {
-          email: email.toLowerCase(),
-          password,
-          redirect: false,
-          callbackUrl,
-        });
+    try {
+      const result = await signIn("credentials", {
+        email: email.toLowerCase(),
+        password,
+        redirect: false,
+      });
 
-        if (!result) {
-          setError("An unexpected error occurred");
-          return;
-        }
+      console.log("SignIn result:", JSON.stringify(result));
 
-        if (result.error) {
-          setError("Invalid email or password");
-          return;
-        }
-
-        if (result.ok) {
-          router.push(result.url || callbackUrl);
-          router.refresh();
-        }
-      } catch {
-        setError("An unexpected error occurred");
+      if (!result) {
+        setError("An unexpected error occurred. Please try again.");
+        setIsLoading(false);
+        return;
       }
-    });
+
+      if (result.error) {
+        setError("Invalid email or password. Please try again.");
+        setIsLoading(false);
+        return;
+      }
+
+      if (result.ok) {
+        // Sign-in succeeded — navigate to dashboard
+        window.location.href = callbackUrl;
+        return;
+      }
+
+      // Fallback: unexpected result shape
+      setError("Sign-in failed. Please try again.");
+      setIsLoading(false);
+    } catch (err) {
+      console.error("SignIn error:", err);
+      setError("An unexpected error occurred. Please try again.");
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -148,10 +157,10 @@ function LoginForm() {
         {/* Submit */}
         <button
           type="submit"
-          disabled={isPending}
+          disabled={isLoading}
           className="flex w-full items-center justify-center gap-2 rounded-lg bg-[#C6AB4E] py-2.5 text-sm font-semibold text-[#1a1b23] transition hover:bg-[#C6AB4E]/90 disabled:cursor-not-allowed disabled:opacity-50"
         >
-          {isPending ? (
+          {isLoading ? (
             <>
               <Loader2 className="h-4 w-4 animate-spin" />
               Signing in...
