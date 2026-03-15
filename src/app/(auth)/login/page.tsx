@@ -1,13 +1,11 @@
 "use client";
 
-import { Suspense, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useState, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { signIn } from "next-auth/react";
 import { Mail, Lock, Eye, EyeOff, Loader2, AlertCircle } from "lucide-react";
 
 function LoginForm() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const callbackUrl = searchParams.get("callbackUrl") || "/dashboard";
   const errorParam = searchParams.get("error");
@@ -16,49 +14,59 @@ function LoginForm() {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
-  const [error, setError] = useState(errorParam || "");
+  const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [csrfToken, setCsrfToken] = useState("");
+
+  // Map NextAuth error codes to user-friendly messages
+  useEffect(() => {
+    if (errorParam === "CredentialsSignin") {
+      setError("Invalid email or password. Please try again.");
+    } else if (errorParam) {
+      setError("An error occurred. Please try again.");
+    }
+  }, [errorParam]);
+
+  // Fetch CSRF token on mount
+  useEffect(() => {
+    fetch("/api/auth/csrf")
+      .then((res) => res.json())
+      .then((data) => setCsrfToken(data.csrfToken))
+      .catch(() => {});
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!email || !password) {
+      setError("Please enter your email and password.");
+      return;
+    }
     setError("");
     setIsLoading(true);
 
-    try {
-      const result = await signIn("credentials", {
-        email: email.toLowerCase(),
-        password,
-        redirect: false,
-      });
+    // Submit as a native form POST to the NextAuth credentials callback.
+    // This lets the server set HttpOnly cookies directly and handle redirects.
+    const form = document.createElement("form");
+    form.method = "POST";
+    form.action = "/api/auth/callback/credentials";
 
-      console.log("SignIn result:", JSON.stringify(result));
+    const fields: Record<string, string> = {
+      csrfToken,
+      email: email.toLowerCase(),
+      password,
+      callbackUrl,
+    };
 
-      if (!result) {
-        setError("An unexpected error occurred. Please try again.");
-        setIsLoading(false);
-        return;
-      }
-
-      if (result.error) {
-        setError("Invalid email or password. Please try again.");
-        setIsLoading(false);
-        return;
-      }
-
-      if (result.ok) {
-        // Sign-in succeeded — navigate to dashboard
-        window.location.href = callbackUrl;
-        return;
-      }
-
-      // Fallback: unexpected result shape
-      setError("Sign-in failed. Please try again.");
-      setIsLoading(false);
-    } catch (err) {
-      console.error("SignIn error:", err);
-      setError("An unexpected error occurred. Please try again.");
-      setIsLoading(false);
+    for (const [key, value] of Object.entries(fields)) {
+      const input = document.createElement("input");
+      input.type = "hidden";
+      input.name = key;
+      input.value = value;
+      form.appendChild(input);
     }
+
+    document.body.appendChild(form);
+    form.submit();
   };
 
   return (
@@ -157,7 +165,7 @@ function LoginForm() {
         {/* Submit */}
         <button
           type="submit"
-          disabled={isLoading}
+          disabled={isLoading || !csrfToken}
           className="flex w-full items-center justify-center gap-2 rounded-lg bg-[#C6AB4E] py-2.5 text-sm font-semibold text-[#1a1b23] transition hover:bg-[#C6AB4E]/90 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {isLoading ? (
