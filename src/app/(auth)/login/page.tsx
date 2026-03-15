@@ -29,15 +29,23 @@ function LoginForm() {
           email: email.toLowerCase(),
           password,
           redirect: false,
+          callbackUrl,
         });
 
-        if (result?.error) {
+        if (!result) {
+          setError("An unexpected error occurred");
+          return;
+        }
+
+        if (result.error) {
           setError("Invalid email or password");
           return;
         }
 
-        router.push(callbackUrl);
-        router.refresh();
+        if (result.ok) {
+          router.push(result.url || callbackUrl);
+          router.refresh();
+        }
       } catch {
         setError("An unexpected error occurred");
       }

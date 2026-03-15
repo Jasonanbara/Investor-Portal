@@ -29,6 +29,7 @@ declare module "next-auth" {
 }
 
 const config: NextAuthConfig = {
+  trustHost: true,
   session: {
     strategy: "jwt",
     maxAge: 900, // 15 minutes
