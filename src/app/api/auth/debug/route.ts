@@ -6,6 +6,20 @@ export async function GET() {
     // Test database connection
     const userCount = await prisma.user.count();
 
+    // List users (email + role only, no sensitive data)
+    const users = await prisma.user.findMany({
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        role: true,
+        isActive: true,
+        passwordHash: true,
+        createdAt: true,
+        lastLoginAt: true,
+      },
+    });
+
     // Check environment
     const hasSecret = !!process.env.NEXTAUTH_SECRET;
     const hasDbUrl = !!process.env.DATABASE_URL;
@@ -17,6 +31,17 @@ export async function GET() {
         connected: true,
         userCount,
       },
+      users: users.map(u => ({
+        id: u.id,
+        email: u.email,
+        name: u.name,
+        role: u.role,
+        isActive: u.isActive,
+        hasPasswordHash: !!u.passwordHash && u.passwordHash.length > 0,
+        passwordHashPrefix: u.passwordHash ? u.passwordHash.substring(0, 7) : "none",
+        createdAt: u.createdAt,
+        lastLoginAt: u.lastLoginAt,
+      })),
       env: {
         NEXTAUTH_SECRET: hasSecret ? "set" : "MISSING",
         DATABASE_URL: hasDbUrl ? "set" : "MISSING",
