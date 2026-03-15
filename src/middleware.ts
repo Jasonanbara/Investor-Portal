@@ -6,7 +6,8 @@ import { authConfig } from "@/lib/auth.config";
  * Route protection logic is in authConfig.callbacks.authorized.
  * This ensures the same JWT/cookie handling as the sign-in flow.
  */
-export const { auth: middleware } = NextAuth(authConfig);
+const { auth } = NextAuth(authConfig);
+export default auth;
 
 export const config = {
   matcher: [
